@@ -1,0 +1,6 @@
+.env
+target/
+*.class
+.maven-home/
+*.log
+*.log.err

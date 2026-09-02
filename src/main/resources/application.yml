@@ -1,0 +1,130 @@
+spring:
+  config:
+    import: optional:file:.env[.properties]
+  application:
+    name: lms-certificate-service
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      pool-name: cert-pool
+      maximum-pool-size: ${DB_POOL_SIZE:5}
+      minimum-idle: 1
+      connection-timeout: 30000
+      idle-timeout: 300000
+      max-lifetime: 900000
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: ${DB_SCHEMA:cert}
+        jdbc:
+          time_zone: UTC
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    schemas: ${DB_SCHEMA:cert}
+    default-schema: ${DB_SCHEMA:cert}
+    create-schemas: true
+  mail:
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${SMTP_AUTH:true}
+          starttls:
+            enable: ${SMTP_STARTTLS:true}
+  mvc:
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: false
+
+server:
+  port: ${SERVER_PORT:8081}
+  error:
+    include-message: never
+    include-stacktrace: never
+  compression:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+
+cert:
+  # JWT — shared secret with LMS-BackEnd (HS256)
+  jwt:
+    secret: ${JWT_SECRET}
+    issuer: ${JWT_ISSUER:lms-backend}
+    clock-skew: 30s
+
+  # Internal service-to-service key (same value as LMS-BackEnd SERVICE_KEY_SECRET)
+  internal:
+    service-key: ${SERVICE_KEY_SECRET}
+
+  # LMS-BackEnd base URL (for fetching user/course/enrollment data)
+  lms-backend:
+    base-url: ${LMS_BACKEND_URL:http://localhost:8080}
+    timeout-ms: ${LMS_BACKEND_TIMEOUT_MS:5000}
+
+  # Cloudflare R2 storage
+  storage:
+    r2:
+      endpoint: ${R2_ENDPOINT}
+      access-key: ${R2_ACCESS_KEY}
+      secret-key: ${R2_SECRET_KEY}
+      bucket: ${R2_BUCKET}
+      public-url: ${R2_PUBLIC_URL}
+
+  # Database-per-tenant runtime. Uses the LMS control plane's platform.tenants
+  # registry and the same credential encryption key as LMS-BackEnd.
+  tenancy:
+    enabled: ${TENANCY_ENABLED:false}
+    tenant-resolution-required: ${TENANT_RESOLUTION_REQUIRED:false}
+    tenant-header: ${TENANT_HEADER:X-Tenant-Slug}
+    credential-encryption-key: ${TENANT_CREDENTIAL_ENCRYPTION_KEY:}
+
+  # Mail
+  mail:
+    enabled: ${MAIL_ENABLED:false}
+    from: ${MAIL_FROM:no-reply@lms.local}
+    from-name: ${MAIL_FROM_NAME:LMS Certificates}
+
+  # Public base URL (used to build verify links in PDFs and emails)
+  app:
+    public-base-url: ${PUBLIC_BASE_URL:http://localhost:8081}
+
+logging:
+  level:
+    com.lms.certificate: ${LOG_LEVEL_APP:INFO}
+    org.springframework.security: WARN
