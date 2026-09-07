@@ -30,6 +30,13 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.CONFLICT, ex.getMessage());
     }
 
+    @ExceptionHandler(LmsBackendUnavailableException.class)
+    public ResponseEntity<Map<String, Object>> handleLmsUnavailable(LmsBackendUnavailableException ex) {
+        log.warn("LMS backend dependency unavailable: {}", ex.getMessage());
+        return error(HttpStatus.SERVICE_UNAVAILABLE,
+                "The LMS backend is temporarily unavailable. Please try again shortly.");
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
         List<String> violations = ex.getBindingResult().getFieldErrors().stream()

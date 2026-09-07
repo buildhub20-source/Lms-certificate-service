@@ -46,11 +46,17 @@ public class CertificatePdfGenerator {
         String html = buildHtml(user, course, org, cert, template);
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             ITextRenderer renderer = new ITextRenderer();
-            renderer.setDocumentFromString(html);
-            renderer.layout();
-            renderer.createPDF(out);
-            log.info("Generated PDF for certificate {}", cert.getSerialNumber());
-            return out.toByteArray();
+            try {
+                renderer.setDocumentFromString(html);
+                renderer.layout();
+                renderer.createPDF(out);
+                log.info("Generated PDF for certificate {}", cert.getSerialNumber());
+                return out.toByteArray();
+            } finally {
+                // Flying Saucer retains CSS/font/layout state in its shared context.
+                // Release that state after every generated document.
+                renderer.getSharedContext().reset();
+            }
         } catch (Exception ex) {
             throw new IllegalStateException("PDF generation failed for " + cert.getSerialNumber(), ex);
         }

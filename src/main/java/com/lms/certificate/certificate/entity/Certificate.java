@@ -12,7 +12,10 @@ import java.util.UUID;
 @Entity
 @Table(
     name = "certificates",
-    uniqueConstraints = @UniqueConstraint(name = "uk_cert_serial", columnNames = "serial_number")
+    uniqueConstraints = {
+        @UniqueConstraint(name = "uk_cert_serial", columnNames = "serial_number"),
+        @UniqueConstraint(name = "uq_cert_student_course", columnNames = {"student_id", "course_id"})
+    }
 )
 public class Certificate extends Timestamped {
     @Id

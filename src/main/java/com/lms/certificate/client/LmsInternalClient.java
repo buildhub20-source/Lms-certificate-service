@@ -1,5 +1,6 @@
 package com.lms.certificate.client;
 
+import com.lms.certificate.common.exception.LmsBackendUnavailableException;
 import com.lms.certificate.config.InternalConfig;
 import com.lms.certificate.config.LmsBackendConfig;
 import com.lms.certificate.tenancy.TenantContext;
@@ -9,7 +10,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.Instant;
@@ -83,7 +86,20 @@ public class LmsInternalClient {
         if (tenantSlug != null && !tenantSlug.isBlank()) headers.set(TENANT_HEADER, tenantSlug);
         HttpEntity<Void> entity = new HttpEntity<>(headers);
         String url = lmsConfig.getBaseUrl() + path;
-        return lmsRestTemplate.exchange(url, HttpMethod.GET, entity, responseType).getBody();
+        try {
+            ResponseEntity<T> response = lmsRestTemplate.exchange(url, HttpMethod.GET, entity, responseType);
+            T body = response.getBody();
+            if (body == null) {
+                throw new LmsBackendUnavailableException(
+                        "LMS backend returned an empty response for " + path);
+            }
+            return body;
+        } catch (LmsBackendUnavailableException ex) {
+            throw ex;
+        } catch (RestClientException ex) {
+            log.warn("LMS backend request failed for {}: {}", path, ex.getMessage());
+            throw new LmsBackendUnavailableException("LMS backend is unavailable for " + path, ex);
+        }
     }
 
     private String currentTenantSlug() {

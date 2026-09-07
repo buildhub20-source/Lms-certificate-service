@@ -91,9 +91,7 @@ public class CertificateService {
      */
     @Transactional
     public CertificateResponse issue(UUID studentId, UUID courseId, UUID issuedByAdminId) {
-        return certificateRepository.findAll().stream()
-                .filter(c -> c.getStudentId().equals(studentId) && c.getCourseId().equals(courseId))
-                .findFirst()
+        return certificateRepository.findByStudentIdAndCourseId(studentId, courseId)
                 .map(existing -> {
                     log.info("Certificate already exists: {}", existing.getSerialNumber());
                     return toResponse(existing);

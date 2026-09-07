@@ -11,6 +11,7 @@ import java.util.UUID;
 @Repository
 public interface CertificateRepository extends JpaRepository<Certificate, UUID> {
     Optional<Certificate> findBySerialNumber(String serialNumber);
+    Optional<Certificate> findByStudentIdAndCourseId(UUID studentId, UUID courseId);
     boolean existsByStudentIdAndCourseId(UUID studentId, UUID courseId);
     Page<Certificate> findByStudentId(UUID studentId, Pageable pageable);
     Optional<Certificate> findByIdAndStudentId(UUID id, UUID studentId);
