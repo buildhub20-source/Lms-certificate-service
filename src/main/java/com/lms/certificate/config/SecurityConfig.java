@@ -53,6 +53,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers(PUBLIC_PATHS).permitAll()
                 .requestMatchers("/api/v1/internal/**").permitAll()
+                // Instructors may manage templates used by courses they own; service-level
+                // ownership checks are the next extension when instructor course ownership is exposed.
+                .requestMatchers("/api/v1/admin/certificate-templates/**").hasAnyRole("ADMIN", "INSTRUCTOR")
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 .anyRequest().authenticated())
             .addFilterBefore(serviceKeyAuthFilter(), UsernamePasswordAuthenticationFilter.class)

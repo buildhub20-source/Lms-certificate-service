@@ -50,6 +50,12 @@ public class R2StorageService {
         return upload(content, key, contentType);
     }
 
+    /** Stores the original, reusable institution PDF separately from issued PDFs. */
+    public String uploadInstitutionTemplatePdf(byte[] content, UUID tenantId, UUID templateId) {
+        String key = tenantPrefix(tenantId) + "/templates/" + templateId + "/original.pdf";
+        return upload(content, key, "application/pdf");
+    }
+
     // ─── Internal ─────────────────────────────────────────────────────────────
 
     private String upload(byte[] content, String key, String contentType) {

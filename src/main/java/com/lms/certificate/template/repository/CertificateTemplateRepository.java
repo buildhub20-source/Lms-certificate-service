@@ -7,8 +7,8 @@ import java.util.Optional;
 import java.util.UUID;
 @Repository
 public interface CertificateTemplateRepository extends JpaRepository<CertificateTemplate, UUID> {
-    /** Returns the org-specific template if one exists. */
-    Optional<CertificateTemplate> findByOrganizationId(UUID organizationId);
+    /** Returns the active default for one tenant; each tenant may own several templates. */
+    Optional<CertificateTemplate> findByOrganizationIdAndDefaultTemplateTrue(UUID organizationId);
     /** Returns the global default template. */
     Optional<CertificateTemplate> findByDefaultTemplateTrue();
 }
