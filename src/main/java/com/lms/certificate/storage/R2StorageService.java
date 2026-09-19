@@ -83,6 +83,6 @@ public class R2StorageService {
     }
 
     private String tenantPrefix(UUID tenantId) {
-        return "Certificates/" + (tenantId == null ? "shared" : tenantId);
+        return "tenants/" + (tenantId == null ? "shared" : tenantId) + "/certificates";
     }
 }
