@@ -1,0 +1,14 @@
+server:
+  forward-headers-strategy: framework
+
+# The API map is not public in production.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+logging:
+  level:
+    root: WARN
+    com.lms: INFO
