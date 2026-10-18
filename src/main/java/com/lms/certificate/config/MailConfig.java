@@ -5,7 +5,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class MailConfig {
     private boolean enabled = false;
     private String from = "no-reply@lms.local";
-    private String fromName = "LMS Certificates";
+    private String fromName = "GradusMind Certificates";
     public boolean isEnabled()          { return enabled; }
     public String getFrom()             { return from; }
     public String getFromName()         { return fromName; }
