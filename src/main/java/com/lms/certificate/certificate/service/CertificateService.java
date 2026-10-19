@@ -68,6 +68,16 @@ public class CertificateService {
     }
 
     @Transactional(readOnly = true)
+    public byte[] downloadMyCertificate(UUID studentId, UUID certId) {
+        Certificate cert = certificateRepository.findByIdAndStudentId(certId, studentId)
+                .orElseThrow(() -> new EntityNotFoundException("Certificate not found: " + certId));
+        if (cert.getStatus() != CertificateStatus.ACTIVE || (cert.getExpiresAt() != null && cert.getExpiresAt().isBefore(Instant.now()))) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.GONE, "Certificate is revoked or expired");
+        }
+        return pdfGenerator.generate(cert);
+    }
+
+    @Transactional(readOnly = true)
     public CertificateResponse getMyCertificate(UUID studentId, UUID certId) {
         Certificate cert = certificateRepository.findByIdAndStudentId(certId, studentId)
                 .orElseThrow(() -> new EntityNotFoundException("Certificate not found: " + certId));
