@@ -30,6 +30,14 @@ public class StudentCertificateController {
         return certificateService.listMyCertificates(studentId, pageable);
     }
 
+    @GetMapping(value = "/{certId}/download", produces = "application/pdf")
+    public org.springframework.http.ResponseEntity<byte[]> download(@PathVariable UUID certId, Authentication auth) {
+        return org.springframework.http.ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=certificate-" + certId + ".pdf")
+                .header("Cache-Control", "no-store")
+                .body(certificateService.downloadMyCertificate((UUID) auth.getPrincipal(), certId));
+    }
+
     @GetMapping("/{certId}")
     public CertificateResponse myGet(@PathVariable UUID certId, Authentication auth) {
         UUID studentId = (UUID) auth.getPrincipal();
