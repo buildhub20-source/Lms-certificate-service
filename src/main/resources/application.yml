@@ -118,7 +118,7 @@ cert:
   mail:
     enabled: ${MAIL_ENABLED:false}
     from: ${MAIL_FROM:no-reply@lms.local}
-    from-name: ${MAIL_FROM_NAME:LMS Certificates}
+    from-name: ${MAIL_FROM_NAME:GradusMind Certificates}
 
   # Public base URL (used to build verify links in PDFs and emails)
   app:
