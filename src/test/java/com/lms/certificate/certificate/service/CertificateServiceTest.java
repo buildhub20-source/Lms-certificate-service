@@ -5,6 +5,8 @@ import com.lms.certificate.certificate.entity.Certificate;
 import com.lms.certificate.certificate.entity.CertificateStatus;
 import com.lms.certificate.certificate.repository.CertificateRepository;
 import com.lms.certificate.client.LmsInternalClient;
+import com.lms.certificate.client.NotificationClient;
+import com.lms.certificate.template.service.TemplateResolver;
 import com.lms.certificate.mail.CertificateMailService;
 import com.lms.certificate.pdf.CertificatePdfGenerator;
 import com.lms.certificate.storage.R2StorageService;
@@ -24,8 +26,11 @@ class CertificateServiceTest {
     private final CertificatePdfGenerator pdfGenerator = mock(CertificatePdfGenerator.class);
     private final R2StorageService storageService = mock(R2StorageService.class);
     private final CertificateMailService mailService = mock(CertificateMailService.class);
+    private final TemplateResolver templateResolver = mock(TemplateResolver.class);
+    private final NotificationClient notificationClient = mock(NotificationClient.class);
     private final CertificateService service = new CertificateService(
-            certificateRepository, lmsClient, pdfGenerator, storageService, mailService);
+            certificateRepository, lmsClient, pdfGenerator, storageService, mailService,
+            templateResolver, notificationClient);
 
     @Test
     void issueReturnsExistingCertificateUsingTargetedStudentAndCourseLookup() {

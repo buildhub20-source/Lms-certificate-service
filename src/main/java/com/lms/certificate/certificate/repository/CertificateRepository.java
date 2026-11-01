@@ -10,6 +10,10 @@ import java.util.Optional;
 import java.util.UUID;
 @Repository
 public interface CertificateRepository extends JpaRepository<Certificate, UUID> {
+
+    /** Certificates waiting on a template for this course. */
+    java.util.List<Certificate> findByCourseIdAndStatus(UUID courseId,
+            com.lms.certificate.certificate.entity.CertificateStatus status);
     Optional<Certificate> findBySerialNumber(String serialNumber);
     Optional<Certificate> findByStudentIdAndCourseId(UUID studentId, UUID courseId);
     boolean existsByStudentIdAndCourseId(UUID studentId, UUID courseId);

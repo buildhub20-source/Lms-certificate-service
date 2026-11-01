@@ -10,6 +10,7 @@ import org.apache.hc.core5.util.Timeout;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -61,6 +62,18 @@ public class InfraConfig {
     public RestTemplate lmsRestTemplate(CloseableHttpClient lmsHttpClient) {
         HttpComponentsClientHttpRequestFactory factory =
                 new HttpComponentsClientHttpRequestFactory(lmsHttpClient);
+        return new RestTemplate(factory);
+    }
+
+    /**
+     * Short-timeout client for bell notifications. Separate from the backend
+     * client because a slow notification service must not hold up issuing.
+     */
+    @Bean(name = "notificationRestTemplate")
+    public RestTemplate notificationRestTemplate(NotificationServiceConfig config) {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(config.getTimeoutMs());
+        factory.setReadTimeout(config.getTimeoutMs());
         return new RestTemplate(factory);
     }
 }

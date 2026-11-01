@@ -4,7 +4,9 @@ import com.lms.certificate.template.dto.request.SaveTemplateRequest;
 import com.lms.certificate.template.dto.response.TemplateResponse;
 import com.lms.certificate.template.service.CertificateTemplateService;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -46,6 +48,33 @@ public class AdminTemplateController {
     public TemplateResponse uploadInstitutionPdf(@RequestPart("template") SaveTemplateRequest request,
                                                  @RequestPart("file") MultipartFile file) throws java.io.IOException {
         return templateService.uploadInstitutionPdf(request, file.getBytes(), file.getContentType());
+    }
+
+    /**
+     * Renders the template with invented learner details so it can be checked
+     * before publishing. Works on drafts; that is what drafts are for.
+     */
+    @GetMapping(value = "/{templateId}/preview", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> preview(@PathVariable UUID templateId) {
+        byte[] pdf = templateService.preview(templateId);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"certificate-preview.pdf\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdf);
+    }
+
+    /**
+     * Puts the template into use for its course and releases any certificates
+     * that were held waiting for it.
+     */
+    @PostMapping("/{templateId}/publish")
+    public TemplateResponse publish(@PathVariable UUID templateId) {
+        return templateService.publish(templateId);
+    }
+
+    @PostMapping("/{templateId}/unpublish")
+    public TemplateResponse unpublish(@PathVariable UUID templateId) {
+        return templateService.unpublish(templateId);
     }
 
     @DeleteMapping("/{templateId}")

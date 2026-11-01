@@ -13,7 +13,7 @@ import com.lms.certificate.certificate.entity.Certificate;
 import com.lms.certificate.client.LmsInternalClient;
 import com.lms.certificate.template.entity.CertificateTemplate;
 import com.lms.certificate.template.entity.CertificateTemplateSource;
-import com.lms.certificate.template.repository.CertificateTemplateRepository;
+import com.lms.certificate.template.service.TemplateResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -38,12 +38,12 @@ public class CertificatePdfGenerator {
     private static final Logger log = LoggerFactory.getLogger(CertificatePdfGenerator.class);
     private static final DateTimeFormatter DATE_FMT =
             DateTimeFormatter.ofPattern("MMMM dd, yyyy").withZone(ZoneOffset.UTC);
-    private final CertificateTemplateRepository templateRepository;
+    private final TemplateResolver templateResolver;
     private final LmsInternalClient lmsClient;
     private final ObjectMapper objectMapper;
-    public CertificatePdfGenerator(CertificateTemplateRepository templateRepository, LmsInternalClient lmsClient,
+    public CertificatePdfGenerator(TemplateResolver templateResolver, LmsInternalClient lmsClient,
                                    ObjectMapper objectMapper) {
-        this.templateRepository = templateRepository;
+        this.templateResolver = templateResolver;
         this.lmsClient = lmsClient;
         this.objectMapper = objectMapper;
     }
@@ -54,13 +54,24 @@ public class CertificatePdfGenerator {
      * @return PDF bytes
      */
     public byte[] generate(Certificate cert) {
+        CertificateTemplate template = templateResolver
+                .resolve(cert.getOrganizationId(), cert.getCourseId())
+                .orElseGet(CertificateTemplate::new);
+        return generate(cert, template);
+    }
+
+    /**
+     * Renders against a template the caller has already resolved.
+     *
+     * <p>The issuing path resolves first so that it can hold the certificate
+     * as pending when nothing is published; passing the result in avoids
+     * looking it up a second time and avoids the two paths ever disagreeing
+     * about which template applies.
+     */
+    public byte[] generate(Certificate cert, CertificateTemplate template) {
         LmsInternalClient.UserDto    user    = lmsClient.getUser(cert.getStudentId());
         LmsInternalClient.CourseDto  course  = lmsClient.getCourse(cert.getCourseId());
         LmsInternalClient.OrgSettingsDto org = lmsClient.getOrgSettings();
-        CertificateTemplate template = templateRepository
-                .findByOrganizationIdAndDefaultTemplateTrue(cert.getOrganizationId())
-                .or(templateRepository::findByDefaultTemplateTrue)
-                .orElseGet(CertificateTemplate::new);
         if (template.getSourceType() == CertificateTemplateSource.INSTITUTION_PDF
                 && template.getPdfTemplateUrl() != null && !template.getPdfTemplateUrl().isBlank()) {
             return stampInstitutionPdf(user, course, org, cert, template);

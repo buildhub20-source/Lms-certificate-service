@@ -7,11 +7,15 @@ import com.lms.certificate.certificate.entity.Certificate;
 import com.lms.certificate.certificate.entity.CertificateStatus;
 import com.lms.certificate.certificate.repository.CertificateRepository;
 import com.lms.certificate.client.LmsInternalClient;
+import com.lms.certificate.client.NotificationClient;
 import com.lms.certificate.mail.CertificateMailService;
 import com.lms.certificate.pdf.CertificatePdfGenerator;
 import com.lms.certificate.storage.R2StorageService;
+import com.lms.certificate.template.entity.CertificateTemplate;
+import com.lms.certificate.template.service.TemplateResolver;
 import com.lms.certificate.tenancy.TenantConnection;
 import com.lms.certificate.tenancy.TenantContext;
+
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.Year;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -34,17 +40,23 @@ public class CertificateService {
     private final CertificatePdfGenerator pdfGenerator;
     private final R2StorageService        storageService;
     private final CertificateMailService  mailService;
+    private final TemplateResolver        templateResolver;
+    private final NotificationClient      notificationClient;
 
     public CertificateService(CertificateRepository certificateRepository,
                               LmsInternalClient lmsClient,
                               CertificatePdfGenerator pdfGenerator,
                               R2StorageService storageService,
-                              CertificateMailService mailService) {
+                              CertificateMailService mailService,
+                              TemplateResolver templateResolver,
+                              NotificationClient notificationClient) {
         this.certificateRepository = certificateRepository;
         this.lmsClient = lmsClient;
         this.pdfGenerator = pdfGenerator;
         this.storageService = storageService;
         this.mailService = mailService;
+        this.templateResolver = templateResolver;
+        this.notificationClient = notificationClient;
     }
 
     // ─── Public ────────────────────────────────────────────────────────────────
@@ -136,31 +148,99 @@ public class CertificateService {
     private CertificateResponse doIssue(UUID studentId, UUID courseId) {
         String serial = generateSerialNumber();
         TenantConnection tenant = TenantContext.current().orElse(null);
+        UUID tenantId = tenant != null ? tenant.tenantId() : null;
+
+        Optional<CertificateTemplate> template = templateResolver.resolve(tenantId, courseId);
+
         Certificate cert = Certificate.builder()
                 .serialNumber(serial)
                 .studentId(studentId)
                 .courseId(courseId)
-                .organizationId(tenant != null ? tenant.tenantId() : null)
+                .organizationId(tenantId)
                 .issuedAt(Instant.now())
-                .status(CertificateStatus.ACTIVE)
+                // Earned either way; whether it can be rendered yet is what
+                // separates PENDING from ACTIVE.
+                .status(template.isPresent() ? CertificateStatus.ACTIVE : CertificateStatus.PENDING)
                 .build();
 
         Certificate saved = certificateRepository.save(cert);
 
-        try {
-            byte[] pdf = pdfGenerator.generate(saved);
-            String pdfUrl = storageService.uploadCertificatePdf(pdf,
-                    tenant != null ? tenant.tenantId() : null, serial);
-            saved.setPdfUrl(pdfUrl);
-            saved = certificateRepository.save(saved);
-            mailService.sendCertificateIssued(saved, pdf, tenant != null ? tenant.slug() : null);
-        } catch (Exception ex) {
-            log.warn("PDF/upload failed for certificate {} — cert saved without PDF: {}",
-                    serial, ex.getMessage());
+        if (template.isEmpty()) {
+            log.info("Certificate {} held pending: no published template for course {}", serial, courseId);
+            mailService.sendTemplateMissing(saved, courseTitle(courseId), tenant != null ? tenant.slug() : null);
+            return toResponse(saved);
         }
 
+        render(saved, template.get(), tenant);
         log.info("Certificate issued: {} student={} course={}", serial, studentId, courseId);
         return toResponse(saved);
+    }
+
+    /**
+     * Produces the PDF, stores it and tells the learner.
+     *
+     * <p>A failure here leaves the certificate PENDING rather than ACTIVE
+     * without a PDF: a learner being shown a download that cannot work is
+     * worse than one that is openly still being prepared, and pending
+     * certificates are retried when a template is next published.
+     */
+    private void render(Certificate cert, CertificateTemplate template, TenantConnection tenant) {
+        UUID tenantId = tenant != null ? tenant.tenantId() : null;
+        try {
+            byte[] pdf = pdfGenerator.generate(cert, template);
+            cert.setPdfUrl(storageService.uploadCertificatePdf(pdf, tenantId, cert.getSerialNumber()));
+            cert.setStatus(CertificateStatus.ACTIVE);
+            Certificate stored = certificateRepository.save(cert);
+
+            mailService.sendCertificateIssued(stored, pdf, tenant != null ? tenant.slug() : null);
+            notificationClient.notifyCertificateReady(
+                    tenantId, stored.getStudentId(), courseTitle(stored.getCourseId()), stored.getId());
+        } catch (Exception ex) {
+            cert.setStatus(CertificateStatus.PENDING);
+            certificateRepository.save(cert);
+            log.warn("Could not produce certificate {} - held pending: {}",
+                    cert.getSerialNumber(), ex.getMessage());
+        }
+    }
+
+    /**
+     * Completes the certificates that were waiting on a template for this
+     * course. Called when one is published.
+     *
+     * @return how many were completed
+     */
+    @Transactional
+    public int completePendingForCourse(UUID courseId) {
+        TenantConnection tenant = TenantContext.current().orElse(null);
+        UUID tenantId = tenant != null ? tenant.tenantId() : null;
+
+        Optional<CertificateTemplate> template = templateResolver.resolve(tenantId, courseId);
+        if (template.isEmpty()) {
+            return 0;
+        }
+
+        List<Certificate> waiting =
+                certificateRepository.findByCourseIdAndStatus(courseId, CertificateStatus.PENDING);
+        int completed = 0;
+        for (Certificate cert : waiting) {
+            render(cert, template.get(), tenant);
+            if (cert.getStatus() == CertificateStatus.ACTIVE) {
+                completed++;
+            }
+        }
+        if (completed > 0) {
+            log.info("Completed {} pending certificate(s) for course {}", completed, courseId);
+        }
+        return completed;
+    }
+
+    private String courseTitle(UUID courseId) {
+        try {
+            LmsInternalClient.CourseDto course = lmsClient.getCourse(courseId);
+            return course != null && course.title() != null ? course.title() : "your course";
+        } catch (Exception ex) {
+            return "your course";
+        }
     }
 
     private CertificateResponse toResponse(Certificate cert) {
