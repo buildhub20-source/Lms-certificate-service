@@ -121,6 +121,13 @@ cert:
     from: ${MAIL_FROM:no-reply@lms.local}
     from-name: ${MAIL_FROM_NAME:LMS Certificates}
 
+  # LMS-Notification-Service, for the learner's bell entry. The certificate
+  # issues either way; this only controls the in-app notification.
+  notification-service:
+    base-url: ${NOTIFICATION_SERVICE_URL:http://localhost:3002}
+    enabled: ${NOTIFICATION_SERVICE_ENABLED:false}
+    timeout-ms: ${NOTIFICATION_SERVICE_TIMEOUT_MS:2000}
+
   # Public base URL (used to build verify links in PDFs and emails)
   app:
     public-base-url: ${PUBLIC_BASE_URL:http://localhost:8081}

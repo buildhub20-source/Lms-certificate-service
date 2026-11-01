@@ -4,6 +4,7 @@ import java.util.UUID;
 import com.lms.certificate.template.entity.CertificateTemplateSource;
 public record SaveTemplateRequest(
         UUID organizationId,        // null = global default
+        UUID courseId,              // null = organisation fallback
         String name,
         CertificateTemplateSource sourceType,
         String fieldLayout,

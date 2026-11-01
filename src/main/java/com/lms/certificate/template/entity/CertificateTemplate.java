@@ -42,6 +42,17 @@ public class CertificateTemplate extends Timestamped {
     private String primaryColor;
     @Column(name = "is_default", nullable = false)
     private boolean defaultTemplate = false;
+
+    /** Course this template is published for; null means organisation fallback. */
+    @Column(name = "course_id")
+    private UUID courseId;
+
+    /** Drafts are previewable but never used to issue. */
+    @Column(name = "published", nullable = false)
+    private boolean published = false;
+
+    @Column(name = "published_at")
+    private java.time.Instant publishedAt;
     // ─── Getters ──────────────────────────────────────────────────────────────
     public UUID getId()                   { return id; }
     public UUID getOrganizationId()       { return organizationId; }
@@ -54,9 +65,15 @@ public class CertificateTemplate extends Timestamped {
     public String getSignatoryTitle()     { return signatoryTitle; }
     public String getSignatureImageUrl()  { return signatureImageUrl; }
     public String getPrimaryColor()       { return primaryColor; }
+    public UUID getCourseId()             { return courseId; }
+    public boolean isPublished()          { return published; }
+    public java.time.Instant getPublishedAt() { return publishedAt; }
     public boolean isDefaultTemplate()    { return defaultTemplate; }
     // ─── Setters ──────────────────────────────────────────────────────────────
     public void setId(UUID id)                             { this.id = id; }
+    public void setCourseId(UUID courseId)                 { this.courseId = courseId; }
+    public void setPublished(boolean published)            { this.published = published; }
+    public void setPublishedAt(java.time.Instant at)       { this.publishedAt = at; }
     public void setOrganizationId(UUID organizationId)     { this.organizationId = organizationId; }
     public void setName(String v)                           { this.name = v; }
     public void setSourceType(CertificateTemplateSource v) { this.sourceType = v == null ? CertificateTemplateSource.LMS_RENDERED : v; }

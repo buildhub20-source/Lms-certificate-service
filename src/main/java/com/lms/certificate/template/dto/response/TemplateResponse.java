@@ -6,6 +6,7 @@ import com.lms.certificate.template.entity.CertificateTemplateSource;
 public record TemplateResponse(
         UUID id,
         UUID organizationId,
+        UUID courseId,
         String name,
         CertificateTemplateSource sourceType,
         String pdfTemplateUrl,
@@ -16,6 +17,8 @@ public record TemplateResponse(
         String signatureImageUrl,
         String primaryColor,
         boolean isDefault,
+        boolean published,
+        Instant publishedAt,
         Instant createdAt,
         Instant updatedAt
 ) {}
