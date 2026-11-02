@@ -5,9 +5,10 @@ import com.lms.certificate.certificate.entity.CertificateStatus;
 import com.lms.certificate.certificate.repository.CertificateRepository;
 import com.lms.certificate.client.LmsInternalClient;
 import com.lms.certificate.client.NotificationClient;
+import com.lms.certificate.config.VerificationConfig;
 import com.lms.certificate.mail.CertificateMailService;
 import com.lms.certificate.pdf.CertificatePdfGenerator;
-import com.lms.certificate.storage.R2StorageService;
+import com.lms.certificate.pdf.TemplateSnapshot;
 import com.lms.certificate.template.entity.CertificateTemplate;
 import com.lms.certificate.template.service.TemplateResolver;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,13 +39,12 @@ class CertificateIssuingTest {
     private final CertificateRepository certificates = mock(CertificateRepository.class);
     private final LmsInternalClient lmsClient = mock(LmsInternalClient.class);
     private final CertificatePdfGenerator pdfGenerator = mock(CertificatePdfGenerator.class);
-    private final R2StorageService storage = mock(R2StorageService.class);
     private final CertificateMailService mail = mock(CertificateMailService.class);
     private final TemplateResolver resolver = mock(TemplateResolver.class);
     private final NotificationClient notifications = mock(NotificationClient.class);
 
     private final CertificateService service = new CertificateService(
-            certificates, lmsClient, pdfGenerator, storage, mail, resolver, notifications);
+            certificates, lmsClient, pdfGenerator, mail, resolver, notifications, new VerificationConfig());
 
     private final UUID studentId = UUID.randomUUID();
     private final UUID courseId = UUID.randomUUID();
@@ -54,8 +54,12 @@ class CertificateIssuingTest {
         when(certificates.findByStudentIdAndCourseId(studentId, courseId)).thenReturn(Optional.empty());
         // save() returns what it was given, as the real repository does.
         when(certificates.save(any(Certificate.class))).thenAnswer(call -> call.getArgument(0));
+        when(lmsClient.getUser(any())).thenReturn(
+                new LmsInternalClient.UserDto(studentId, "Ada Learner", "ada@example.test"));
         when(lmsClient.getCourse(any())).thenReturn(
                 new LmsInternalClient.CourseDto(courseId, "Data Structures", null, null, null));
+        when(lmsClient.getOrgSettings()).thenReturn(
+                new LmsInternalClient.OrgSettingsDto("SRP Institute", null, null, "#112233", null));
     }
 
     private Certificate captureSaved() {
@@ -73,7 +77,7 @@ class CertificateIssuingTest {
 
         assertThat(captureSaved().getStatus()).isEqualTo(CertificateStatus.PENDING);
         // Nothing to render from, so nothing is attempted or promised.
-        verify(pdfGenerator, never()).generate(any(), any());
+        verify(pdfGenerator, never()).generate(any(), any(), any());
         verify(mail, never()).sendCertificateIssued(any(), any(), any());
         verify(notifications, never()).notifyCertificateReady(any(), any(), anyString(), any());
     }
@@ -89,20 +93,54 @@ class CertificateIssuingTest {
     }
 
     @Test
-    @DisplayName("with a published template the certificate is produced and delivered")
+    @DisplayName("with a published template the certificate is produced and delivered, but not stored")
     void issuedWhenTemplateExists() {
         CertificateTemplate template = new CertificateTemplate();
+        template.setSignatoryName("Dr. Rao");
         when(resolver.resolve(any(), eq(courseId))).thenReturn(Optional.of(template));
-        when(pdfGenerator.generate(any(), eq(template))).thenReturn(new byte[] {1, 2, 3});
-        when(storage.uploadCertificatePdf(any(), any(), anyString())).thenReturn("https://files/cert.pdf");
+        when(pdfGenerator.generate(any(), any(), anyString())).thenReturn(new byte[] {1, 2, 3});
 
         service.issue(studentId, courseId, null);
 
         Certificate saved = captureSaved();
         assertThat(saved.getStatus()).isEqualTo(CertificateStatus.ACTIVE);
-        assertThat(saved.getPdfUrl()).isEqualTo("https://files/cert.pdf");
-        verify(mail).sendCertificateIssued(any(), any(), any());
+        assertThat(saved.getPdfUrl()).isNull();
+        verify(mail).sendCertificateIssued(any(), eq(new byte[] {1, 2, 3}), any());
         verify(notifications).notifyCertificateReady(any(), eq(studentId), eq("Data Structures"), any());
+    }
+
+    @Test
+    @DisplayName("what is printed is fixed when the certificate is issued")
+    void snapshotIsFixedAtIssue() {
+        CertificateTemplate template = new CertificateTemplate();
+        template.setSignatoryName("Dr. Rao");
+        when(resolver.resolve(any(), eq(courseId))).thenReturn(Optional.of(template));
+        when(pdfGenerator.generate(any(), any(), anyString())).thenReturn(new byte[] {1});
+
+        service.issue(studentId, courseId, null);
+
+        Certificate saved = captureSaved();
+        assertThat(saved.getRecipientName()).isEqualTo("Ada Learner");
+        assertThat(saved.getCourseTitle()).isEqualTo("Data Structures");
+        assertThat(saved.getIssuerName()).isEqualTo("SRP Institute");
+        TemplateSnapshot snapshot = TemplateSnapshot.fromJson(saved.getTemplateSnapshot());
+        assertThat(snapshot.signatoryName()).isEqualTo("Dr. Rao");
+        // The template set no colour, so the organisation's at the time is kept.
+        assertThat(snapshot.primaryColor()).isEqualTo("#112233");
+    }
+
+    @Test
+    @DisplayName("each certificate gets its own unguessable verification link")
+    void verificationTokenIsIssued() {
+        CertificateTemplate template = new CertificateTemplate();
+        when(resolver.resolve(any(), eq(courseId))).thenReturn(Optional.of(template));
+        when(pdfGenerator.generate(any(), any(), anyString())).thenReturn(new byte[] {1});
+
+        service.issue(studentId, courseId, null);
+
+        String token = captureSaved().getVerificationToken();
+        assertThat(token).matches("[A-Za-z0-9_-]{43}");
+        verify(pdfGenerator).generate(any(), any(), eq("http://localhost:3000/verify/t/" + token));
     }
 
     @Test
@@ -110,7 +148,7 @@ class CertificateIssuingTest {
     void renderFailureHoldsRatherThanIssues() {
         CertificateTemplate template = new CertificateTemplate();
         when(resolver.resolve(any(), eq(courseId))).thenReturn(Optional.of(template));
-        when(pdfGenerator.generate(any(), eq(template)))
+        when(pdfGenerator.generate(any(), any(), anyString()))
                 .thenThrow(new IllegalStateException("renderer unavailable"));
 
         service.issue(studentId, courseId, null);
@@ -121,15 +159,28 @@ class CertificateIssuingTest {
     }
 
     @Test
+    @DisplayName("an unreachable LMS holds the certificate rather than issuing it with blank names")
+    void lmsFailureHolds() {
+        CertificateTemplate template = new CertificateTemplate();
+        when(resolver.resolve(any(), eq(courseId))).thenReturn(Optional.of(template));
+        when(lmsClient.getUser(any())).thenThrow(new IllegalStateException("LMS down"));
+
+        service.issue(studentId, courseId, null);
+
+        assertThat(captureSaved().getStatus()).isEqualTo(CertificateStatus.PENDING);
+        verify(pdfGenerator, never()).generate(any(), any(), any());
+    }
+
+    @Test
     @DisplayName("publishing a template releases the certificates that were waiting")
     void pendingAreReleasedOnPublish() {
         CertificateTemplate template = new CertificateTemplate();
         when(resolver.resolve(any(), eq(courseId))).thenReturn(Optional.of(template));
-        when(pdfGenerator.generate(any(), eq(template))).thenReturn(new byte[] {1});
-        when(storage.uploadCertificatePdf(any(), any(), anyString())).thenReturn("https://files/cert.pdf");
+        when(pdfGenerator.generate(any(), any(), anyString())).thenReturn(new byte[] {1});
 
         Certificate waiting = Certificate.builder()
-                .serialNumber("CERT-PENDING-1").studentId(studentId).courseId(courseId)
+                .serialNumber("CERT-PENDING-1").verificationToken("t".repeat(43))
+                .studentId(studentId).courseId(courseId)
                 .status(CertificateStatus.PENDING).build();
         when(certificates.findByCourseIdAndStatus(courseId, CertificateStatus.PENDING))
                 .thenReturn(List.of(waiting));
@@ -138,6 +189,7 @@ class CertificateIssuingTest {
 
         assertThat(completed).isEqualTo(1);
         assertThat(waiting.getStatus()).isEqualTo(CertificateStatus.ACTIVE);
+        assertThat(waiting.hasSnapshot()).isTrue();
         verify(mail).sendCertificateIssued(any(), any(), any());
     }
 

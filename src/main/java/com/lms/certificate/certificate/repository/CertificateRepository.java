@@ -15,6 +15,7 @@ public interface CertificateRepository extends JpaRepository<Certificate, UUID> 
     java.util.List<Certificate> findByCourseIdAndStatus(UUID courseId,
             com.lms.certificate.certificate.entity.CertificateStatus status);
     Optional<Certificate> findBySerialNumber(String serialNumber);
+    Optional<Certificate> findByVerificationToken(String verificationToken);
     Optional<Certificate> findByStudentIdAndCourseId(UUID studentId, UUID courseId);
     boolean existsByStudentIdAndCourseId(UUID studentId, UUID courseId);
     Page<Certificate> findByStudentId(UUID studentId, Pageable pageable);

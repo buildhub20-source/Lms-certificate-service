@@ -31,4 +31,27 @@ public class PublicCertificateController {
                                                      @PathVariable String serialNumber) {
         return certificateService.verify(serialNumber);
     }
+
+    /** Verify by the token in a certificate's QR code. */
+    @GetMapping("/verify/token/{token}")
+    public PublicCertificateResponse verifyToken(@PathVariable String token) {
+        return certificateService.verifyByToken(requireToken(token));
+    }
+
+    /** Token verification for a tenant; the tenant filter selects the database from the path. */
+    @GetMapping("/tenants/{tenantSlug}/verify/token/{token}")
+    public PublicCertificateResponse verifyTokenForTenant(@PathVariable String tenantSlug,
+                                                          @PathVariable String token) {
+        return certificateService.verifyByToken(requireToken(token));
+    }
+
+    private static final java.util.regex.Pattern TOKEN = java.util.regex.Pattern.compile("[A-Za-z0-9_-]{32,64}");
+
+    /** A malformed token cannot match anything, so it is simply not found. */
+    private static String requireToken(String token) {
+        if (token == null || !TOKEN.matcher(token).matches()) {
+            throw new jakarta.persistence.EntityNotFoundException("Certificate not found");
+        }
+        return token;
+    }
 }

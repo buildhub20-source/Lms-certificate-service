@@ -1,5 +1,6 @@
 package com.lms.certificate.certificate.controller;
 
+import com.lms.certificate.certificate.dto.response.CertificateResponse;
 import com.lms.certificate.certificate.service.CertificateService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,13 +26,20 @@ public class InternalEventController {
         this.certificateService = certificateService;
     }
 
+    /**
+     * Creates the certificate, or returns the existing one when the event is
+     * delivered again, so a retried call never issues twice.
+     */
     @PostMapping("/enrollment-completed")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public Map<String, String> onEnrollmentCompleted(@RequestBody Map<String, String> payload) {
         UUID studentId = UUID.fromString(payload.get("studentId"));
         UUID courseId  = UUID.fromString(payload.get("courseId"));
         log.info("Enrollment-completed webhook: student={} course={}", studentId, courseId);
-        certificateService.handleEnrollmentCompleted(studentId, courseId);
-        return Map.of("status", "accepted");
+        CertificateResponse certificate = certificateService.handleEnrollmentCompleted(studentId, courseId);
+        return Map.of(
+                "certificateId", certificate.id().toString(),
+                "serialNumber", certificate.serialNumber(),
+                "status", certificate.status().name());
     }
 }

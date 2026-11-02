@@ -9,7 +9,7 @@ import com.lms.certificate.client.NotificationClient;
 import com.lms.certificate.template.service.TemplateResolver;
 import com.lms.certificate.mail.CertificateMailService;
 import com.lms.certificate.pdf.CertificatePdfGenerator;
-import com.lms.certificate.storage.R2StorageService;
+import com.lms.certificate.config.VerificationConfig;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -24,13 +24,12 @@ class CertificateServiceTest {
     private final CertificateRepository certificateRepository = mock(CertificateRepository.class);
     private final LmsInternalClient lmsClient = mock(LmsInternalClient.class);
     private final CertificatePdfGenerator pdfGenerator = mock(CertificatePdfGenerator.class);
-    private final R2StorageService storageService = mock(R2StorageService.class);
     private final CertificateMailService mailService = mock(CertificateMailService.class);
     private final TemplateResolver templateResolver = mock(TemplateResolver.class);
     private final NotificationClient notificationClient = mock(NotificationClient.class);
     private final CertificateService service = new CertificateService(
-            certificateRepository, lmsClient, pdfGenerator, storageService, mailService,
-            templateResolver, notificationClient);
+            certificateRepository, lmsClient, pdfGenerator, mailService,
+            templateResolver, notificationClient, new VerificationConfig());
 
     @Test
     void issueReturnsExistingCertificateUsingTargetedStudentAndCourseLookup() {
@@ -57,6 +56,6 @@ class CertificateServiceTest {
         verify(certificateRepository).findByStudentIdAndCourseId(studentId, courseId);
         verify(certificateRepository, never()).findAll();
         verify(certificateRepository, never()).save(any());
-        verifyNoInteractions(pdfGenerator, storageService, mailService);
+        verifyNoInteractions(pdfGenerator, mailService);
     }
 }
