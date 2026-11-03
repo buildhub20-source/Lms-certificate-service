@@ -119,7 +119,7 @@ cert:
   mail:
     enabled: ${MAIL_ENABLED:false}
     from: ${MAIL_FROM:no-reply@lms.local}
-    from-name: ${MAIL_FROM_NAME:LMS Certificates}
+    from-name: ${MAIL_FROM_NAME:GradusMind Certificates}
 
   # LMS-Notification-Service, for the learner's bell entry. The certificate
   # issues either way; this only controls the in-app notification.
