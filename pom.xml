@@ -29,6 +29,7 @@
         <postgresql.version>42.7.3</postgresql.version>
         <flying-saucer.version>9.4.0</flying-saucer.version>
         <awssdk.version>2.21.29</awssdk.version>
+        <zxing.version>3.5.3</zxing.version>
     </properties>
 
     <dependencies>
@@ -100,6 +101,13 @@
             <groupId>org.xhtmlrenderer</groupId>
             <artifactId>flying-saucer-pdf-openpdf</artifactId>
             <version>${flying-saucer.version}</version>
+        </dependency>
+
+        <!-- QR codes for the verification link printed on every certificate -->
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>core</artifactId>
+            <version>${zxing.version}</version>
         </dependency>
 
         <!-- AWS SDK v2 for Cloudflare R2 (S3-compatible) -->

@@ -2,8 +2,14 @@ package com.lms.certificate.pdf;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.EncodeHintType;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.QRCodeWriter;
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
 import com.lowagie.text.Font;
 import com.lowagie.text.Phrase;
+import com.lowagie.text.Rectangle;
 import com.lowagie.text.pdf.BaseFont;
 import com.lowagie.text.pdf.ColumnText;
 import com.lowagie.text.pdf.PdfContentByte;
@@ -13,7 +19,6 @@ import com.lms.certificate.certificate.entity.Certificate;
 import com.lms.certificate.client.LmsInternalClient;
 import com.lms.certificate.template.entity.CertificateTemplate;
 import com.lms.certificate.template.entity.CertificateTemplateSource;
-import com.lms.certificate.template.service.TemplateResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -32,51 +37,76 @@ import java.util.Map;
  * <p>The template is a Thymeleaf-style HTML string populated via simple
  * string replacement to avoid a Thymeleaf dependency. The HTML is rendered
  * to PDF by Flying Saucer (XHTML renderer) + OpenPDF.
+ *
+ * <p>The PDF only ever exists in memory: it is produced for each download and
+ * never stored. Every certificate carries a QR code linking to its public
+ * verification page.
  */
 @Service
 public class CertificatePdfGenerator {
     private static final Logger log = LoggerFactory.getLogger(CertificatePdfGenerator.class);
     private static final DateTimeFormatter DATE_FMT =
             DateTimeFormatter.ofPattern("MMMM dd, yyyy").withZone(ZoneOffset.UTC);
-    private final TemplateResolver templateResolver;
+    /** Side of the QR code in PDF points (72 pt = 1 inch): large enough to scan from a printout. */
+    private static final float QR_SIZE = 72f;
+    private static final float QR_MARGIN = 28f;
+    private static final String QR_FIELD = "verificationQr";
+
     private final LmsInternalClient lmsClient;
     private final ObjectMapper objectMapper;
-    public CertificatePdfGenerator(TemplateResolver templateResolver, LmsInternalClient lmsClient,
-                                   ObjectMapper objectMapper) {
-        this.templateResolver = templateResolver;
+    public CertificatePdfGenerator(LmsInternalClient lmsClient, ObjectMapper objectMapper) {
         this.lmsClient = lmsClient;
         this.objectMapper = objectMapper;
     }
-    /**
-     * Generates a PDF byte array for the given certificate.
-     *
-     * @param cert the certificate to render
-     * @return PDF bytes
-     */
-    public byte[] generate(Certificate cert) {
-        CertificateTemplate template = templateResolver
-                .resolve(cert.getOrganizationId(), cert.getCourseId())
-                .orElseGet(CertificateTemplate::new);
-        return generate(cert, template);
-    }
 
     /**
-     * Renders against a template the caller has already resolved.
+     * Renders the certificate in memory.
      *
-     * <p>The issuing path resolves first so that it can hold the certificate
-     * as pending when nothing is published; passing the result in avoids
-     * looking it up a second time and avoids the two paths ever disagreeing
-     * about which template applies.
+     * <p>The text comes from what was fixed on the certificate when it was
+     * issued; the LMS is asked only for anything not yet fixed, which is the
+     * case for previews and for certificates issued before that was kept.
+     *
+     * @param template  the template to render with: the certificate's own
+     *                  snapshot for a download, the live one for a preview
+     * @param verifyUrl the public verification link encoded in the QR code
      */
-    public byte[] generate(Certificate cert, CertificateTemplate template) {
-        LmsInternalClient.UserDto    user    = lmsClient.getUser(cert.getStudentId());
-        LmsInternalClient.CourseDto  course  = lmsClient.getCourse(cert.getCourseId());
-        LmsInternalClient.OrgSettingsDto org = lmsClient.getOrgSettings();
+    public byte[] generate(Certificate cert, CertificateTemplate template, String verifyUrl) {
+        Printed printed = printed(cert, template);
+        byte[] pdf;
         if (template.getSourceType() == CertificateTemplateSource.INSTITUTION_PDF
                 && template.getPdfTemplateUrl() != null && !template.getPdfTemplateUrl().isBlank()) {
-            return stampInstitutionPdf(user, course, org, cert, template);
+            pdf = stampInstitutionPdf(printed, cert, template);
+        } else {
+            pdf = renderHtml(printed, cert, template);
         }
-        String html = buildHtml(user, course, org, cert, template);
+        return addVerificationQr(pdf, verifyUrl, parseLayout(template.getFieldLayout()).get(QR_FIELD),
+                cert.getSerialNumber());
+    }
+
+    /** What is printed on a certificate besides its template's own settings. */
+    public record Printed(String recipientName, String courseTitle, String issuerName, String primaryColor) { }
+
+    /**
+     * Resolves what will be printed, asking the LMS only for what the
+     * certificate does not already hold.
+     */
+    public Printed printed(Certificate cert, CertificateTemplate template) {
+        String recipient = cert.getRecipientName();
+        String course    = cert.getCourseTitle();
+        String issuer    = cert.getIssuerName();
+        String color     = template.getPrimaryColor();
+        if (recipient == null) recipient = lmsClient.getUser(cert.getStudentId()).name();
+        if (course == null)    course    = lmsClient.getCourse(cert.getCourseId()).title();
+        if (issuer == null || color == null) {
+            LmsInternalClient.OrgSettingsDto org = lmsClient.getOrgSettings();
+            if (issuer == null) issuer = org.name();
+            if (color == null)  color  = org.primaryColor();
+        }
+        return new Printed(recipient, course, issuer, color != null ? color : "#3B82F6");
+    }
+
+    private byte[] renderHtml(Printed printed, Certificate cert, CertificateTemplate template) {
+        String html = buildHtml(printed, cert, template);
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             ITextRenderer renderer = new ITextRenderer();
             renderer.setDocumentFromString(html);
@@ -90,20 +120,75 @@ public class CertificatePdfGenerator {
     }
 
     /**
+     * Draws the verification QR code onto the certificate.
+     *
+     * <p>It is drawn as vector squares on a white backing, so it stays sharp
+     * when printed and scannable on a dark or busy background. Institution
+     * templates can position it with a {@code verificationQr} entry in their
+     * field layout (x and y are its lower-left corner, {@code size} its side);
+     * otherwise it sits in the bottom-right corner of the first page.
+     */
+    private byte[] addVerificationQr(byte[] pdf, String verifyUrl, FieldPlacement placement, String serial) {
+        if (verifyUrl == null || verifyUrl.isBlank()) {
+            return pdf;
+        }
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            PdfReader reader = new PdfReader(pdf);
+            try (PdfStamper stamper = new PdfStamper(reader, output)) {
+                int page = placement == null ? 1 : Math.max(1, Math.min(placement.page(), reader.getNumberOfPages()));
+                Rectangle bounds = reader.getPageSize(page);
+                float size = placement != null && placement.size() != null && placement.size() > 0
+                        ? Math.max(48, Math.min(200, placement.size())) : QR_SIZE;
+                float x = placement != null ? placement.x() : bounds.getRight() - QR_MARGIN - size;
+                float y = placement != null ? placement.y() : bounds.getBottom() + QR_MARGIN;
+
+                BitMatrix matrix = new QRCodeWriter().encode(verifyUrl, BarcodeFormat.QR_CODE, 0, 0, Map.of(
+                        EncodeHintType.MARGIN, 0,
+                        EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.M));
+                int modules = matrix.getWidth();
+                float module = size / modules;
+                float quiet = module * 2;
+                float caption = 9;
+
+                PdfContentByte layer = stamper.getOverContent(page);
+                layer.saveState();
+                layer.setColorFill(java.awt.Color.WHITE);
+                layer.rectangle(x - quiet, y - quiet - caption, size + 2 * quiet, size + 2 * quiet + caption);
+                layer.fill();
+                layer.setColorFill(java.awt.Color.BLACK);
+                for (int row = 0; row < modules; row++) {
+                    for (int col = 0; col < modules; col++) {
+                        if (matrix.get(col, row)) {
+                            layer.rectangle(x + col * module, y + size - (row + 1) * module, module, module);
+                        }
+                    }
+                }
+                layer.fill();
+                layer.restoreState();
+
+                BaseFont font = BaseFont.createFont(BaseFont.HELVETICA, BaseFont.WINANSI, BaseFont.NOT_EMBEDDED);
+                ColumnText.showTextAligned(layer, ElementAlignment.CENTER,
+                        new Phrase("Scan to verify", new Font(font, 6.5f)), x + size / 2, y - caption + 1, 0);
+            } finally {
+                reader.close();
+            }
+            return output.toByteArray();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Could not add verification QR to " + serial, ex);
+        }
+    }
+
+    /**
      * Produces a new, learner-specific PDF on top of the original institution template.
      * Coordinates use PDF points, measured from the lower-left of the page. The source PDF in
      * R2 is read-only and is never changed.
      */
-    private byte[] stampInstitutionPdf(LmsInternalClient.UserDto user,
-                                       LmsInternalClient.CourseDto course,
-                                       LmsInternalClient.OrgSettingsDto org,
-                                       Certificate cert,
-                                       CertificateTemplate template) {
+    private byte[] stampInstitutionPdf(Printed printed, Certificate cert, CertificateTemplate template) {
         Map<String, FieldPlacement> layout = parseLayout(template.getFieldLayout());
         Map<String, String> values = new LinkedHashMap<>();
-        values.put("learnerFullName", user.name());
-        values.put("courseTitle", course.title());
-        values.put("organizationName", org.name());
+        values.put("learnerFullName", printed.recipientName());
+        values.put("courseTitle", printed.courseTitle());
+        values.put("organizationName", printed.issuerName());
         values.put("issuedDate", DATE_FMT.format(cert.getIssuedAt()));
         values.put("certificateNumber", cert.getSerialNumber());
 
@@ -158,7 +243,12 @@ public class CertificatePdfGenerator {
         }
     }
 
-    private record FieldPlacement(int page, float x, float y, float fontSize, String align) { }
+    /** {@code size} is read only for the QR code's placement. */
+    private record FieldPlacement(int page, float x, float y, float fontSize, String align, Float size) {
+        FieldPlacement(int page, float x, float y, float fontSize, String align) {
+            this(page, x, y, fontSize, align, null);
+        }
+    }
 
     /** Avoids coupling the rendering code to OpenPDF's integer constants in callers. */
     private static final class ElementAlignment {
@@ -168,19 +258,13 @@ public class CertificatePdfGenerator {
     }
 
     // ─── HTML builder ─────────────────────────────────────────────────────────
-    private String buildHtml(LmsInternalClient.UserDto user,
-                             LmsInternalClient.CourseDto course,
-                             LmsInternalClient.OrgSettingsDto org,
-                             Certificate cert,
-                             CertificateTemplate template) {
-        String primaryColor = template.getPrimaryColor() != null
-                ? template.getPrimaryColor()
-                : (org.primaryColor() != null ? org.primaryColor() : "#3B82F6");
+    private String buildHtml(Printed printed, Certificate cert, CertificateTemplate template) {
+        String primaryColor = printed.primaryColor();
         String bgStyle = template.getBackgroundImageUrl() != null
                 ? "background-image: url('" + template.getBackgroundImageUrl() + "'); background-size: cover;"
                 : "background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);";
         String issuedDate = DATE_FMT.format(cert.getIssuedAt());
-        String signatoryName  = template.getSignatoryName()  != null ? template.getSignatoryName()  : org.name();
+        String signatoryName  = template.getSignatoryName()  != null ? template.getSignatoryName()  : printed.issuerName();
         String signatoryTitle = template.getSignatoryTitle() != null ? template.getSignatoryTitle() : "Platform Administrator";
         return """
             <?xml version="1.0" encoding="UTF-8"?>
@@ -208,7 +292,7 @@ public class CertificatePdfGenerator {
                 .footer-label { font-size: 8pt; color: #94a3b8; letter-spacing: 1px;
                                 text-transform: uppercase; margin-top: 2pt; }
                 .sig-img { height: 32pt; margin-bottom: 4pt; }
-                .serial { font-size: 7pt; color: #cbd5e1; margin-top: 12pt; letter-spacing: 1px; }
+                .serial { font-size: 8pt; color: #64748b; margin-top: 12pt; letter-spacing: 1px; }
               </style>
             </head>
             <body>
@@ -224,8 +308,11 @@ public class CertificatePdfGenerator {
                     <div class="footer-line">%s</div>
                     <div class="footer-label">Issue Date</div>
                   </div>
+                  <div class="footer-block">
                     %s
+                    <div class="footer-line">%s</div>
                     <div class="footer-label">%s</div>
+                  </div>
                 </div>
                 <div class="serial">Certificate ID: %s</div>
               </div>
@@ -233,9 +320,9 @@ public class CertificatePdfGenerator {
             </html>
             """.formatted(
                 bgStyle, primaryColor, primaryColor,
-                org.name(),
-                user.name(),
-                course.title(),
+                printed.issuerName(),
+                printed.recipientName(),
+                printed.courseTitle(),
                 issuedDate,
                 template.getSignatureImageUrl() != null
                     ? "<img class='sig-img' src='" + template.getSignatureImageUrl() + "' alt='Signature'/>"

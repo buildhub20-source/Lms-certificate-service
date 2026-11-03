@@ -28,7 +28,10 @@ public class SecurityConfig {
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/actuator/health/**",
-            "/actuator/info"
+            "/actuator/info",
+            // Errors from filters (an unknown tenant, say) are rendered here; securing it
+            // would turn every such 400 or 404 into a misleading 401.
+            "/error"
     };
 
     private final JwtValidator jwtValidator;

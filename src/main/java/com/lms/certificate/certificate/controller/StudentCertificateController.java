@@ -5,6 +5,11 @@ import com.lms.certificate.certificate.service.CertificateService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -30,12 +35,20 @@ public class StudentCertificateController {
         return certificateService.listMyCertificates(studentId, pageable);
     }
 
-    @GetMapping(value = "/{certId}/download", produces = "application/pdf")
-    public org.springframework.http.ResponseEntity<byte[]> download(@PathVariable UUID certId, Authentication auth) {
-        return org.springframework.http.ResponseEntity.ok()
-                .header("Content-Disposition", "attachment; filename=certificate-" + certId + ".pdf")
-                .header("Cache-Control", "no-store")
-                .body(certificateService.downloadMyCertificate((UUID) auth.getPrincipal(), certId));
+    /**
+     * The certificate as a PDF rendered for this request. Errors come back as
+     * JSON: 404 not found, 409 still pending, 410 revoked or expired.
+     */
+    @GetMapping("/{certId}/download")
+    public ResponseEntity<byte[]> download(@PathVariable UUID certId, Authentication auth) {
+        CertificateService.CertificateFile file =
+                certificateService.downloadMyCertificate((UUID) auth.getPrincipal(), certId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_PDF)
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(file.filename()).build().toString())
+                .cacheControl(CacheControl.noStore().cachePrivate())
+                .body(file.content());
     }
 
     @GetMapping("/{certId}")

@@ -12,6 +12,9 @@ import java.util.UUID;
 
 /**
  * Stores and retrieves files from Cloudflare R2 (S3-compatible).
+ *
+ * <p>Only template files live here. Issued certificates are never stored:
+ * each download renders its PDF in memory.
  */
 @Service
 public class R2StorageService {
@@ -24,18 +27,6 @@ public class R2StorageService {
     public R2StorageService(S3Client s3Client, R2Config r2Config) {
         this.s3Client = s3Client;
         this.r2Config = r2Config;
-    }
-
-    /**
-     * Uploads a PDF byte array to R2 and returns its public URL.
-     *
-     * @param content      the PDF bytes
-     * @param serialNumber used to build a deterministic, human-readable key
-     * @return the public URL of the uploaded file
-     */
-    public String uploadCertificatePdf(byte[] content, UUID tenantId, String serialNumber) {
-        String key = tenantPrefix(tenantId) + "/pdfs/" + serialNumber + ".pdf";
-        return upload(content, key, "application/pdf");
     }
 
     /**

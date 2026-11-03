@@ -9,6 +9,7 @@ import com.lms.certificate.template.dto.response.TemplateResponse;
 import com.lms.certificate.template.entity.CertificateTemplate;
 import com.lms.certificate.template.entity.CertificateTemplateSource;
 import com.lms.certificate.template.repository.CertificateTemplateRepository;
+import com.lms.certificate.config.VerificationConfig;
 import com.lms.certificate.storage.R2StorageService;
 import jakarta.persistence.EntityNotFoundException;
 import org.slf4j.Logger;
@@ -29,15 +30,18 @@ public class CertificateTemplateService {
     private final R2StorageService storageService;
     private final CertificatePdfGenerator pdfGenerator;
     private final CertificateService certificateService;
+    private final VerificationConfig verificationConfig;
 
     public CertificateTemplateService(CertificateTemplateRepository templateRepository,
                                       R2StorageService storageService,
                                       CertificatePdfGenerator pdfGenerator,
-                                      CertificateService certificateService) {
+                                      CertificateService certificateService,
+                                      VerificationConfig verificationConfig) {
         this.templateRepository = templateRepository;
         this.storageService = storageService;
         this.pdfGenerator = pdfGenerator;
         this.certificateService = certificateService;
+        this.verificationConfig = verificationConfig;
     }
 
     @Transactional(readOnly = true)
@@ -89,6 +93,9 @@ public class CertificateTemplateService {
 
         Certificate sample = Certificate.builder()
                 .serialNumber("PREVIEW-0000-0000")
+                .verificationToken("PREVIEW")
+                .recipientName("Sample Learner")
+                .courseTitle(template.getCourseId() == null ? "Sample Course" : null)
                 .studentId(UUID.randomUUID())
                 .courseId(template.getCourseId() != null ? template.getCourseId() : UUID.randomUUID())
                 .organizationId(template.getOrganizationId())
@@ -96,7 +103,7 @@ public class CertificateTemplateService {
                 .status(CertificateStatus.ACTIVE)
                 .build();
 
-        return pdfGenerator.generate(sample, template);
+        return pdfGenerator.generate(sample, template, verificationConfig.verifyUrl("preview", null));
     }
 
     /**

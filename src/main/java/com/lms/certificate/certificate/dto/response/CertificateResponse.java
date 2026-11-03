@@ -15,7 +15,8 @@ public record CertificateResponse(
         Instant issuedAt,
         Instant expiresAt,
         CertificateStatus status,
-        String pdfUrl,
+        /** Public link encoded in the certificate's QR code; null while pending. */
+        String verificationUrl,
         Instant revokedAt,
         String revokeReason
 ) {}
