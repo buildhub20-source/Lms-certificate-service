@@ -34,7 +34,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleLmsUnavailable(LmsBackendUnavailableException ex) {
         log.warn("LMS backend dependency unavailable: {}", ex.getMessage());
         return error(HttpStatus.SERVICE_UNAVAILABLE,
-                "The LMS backend is temporarily unavailable. Please try again shortly.");
+                "GradusMind is temporarily unavailable. Please try again shortly.");
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
